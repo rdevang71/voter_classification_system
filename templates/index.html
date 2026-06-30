@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voter PDF Extractor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    .breakdowns {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+    .breakdowns section {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .breakdowns h3 {
+      margin: 0 0 12px 0;
+      color: #1e40af;
+    }
+    .breakdown-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .breakdown-item:last-child {
+      border-bottom: none;
+    }
+    .breakdown-item strong {
+      color: #1e3a8a;
+      font-weight: 600;
+    }
+    .pill {
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pill.extracted { background: #d1fae5; color: #065f46; }
+    .pill.needs_review { background: #fef3c7; color: #92400e; }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <h1>Voter PDF Extractor</h1>
+          <p>Upload an electoral-roll PDF, OCR the pages, extract voters with <strong>Religion & Caste</strong> classification.</p>
+        </div>
+        <div class="status {% if error %}bad{% else %}good{% endif %}">
+          {% if setup_status %}
+            Setup ready
+          {% else %}
+            Setup needed
+          {% endif %}
+        </div>
+      </header>
+
+      {% if setup_status %}
+        <div class="setup-grid">
+          <div>
+            <span>Poppler</span>
+            <strong>{{ setup_status.poppler_path }}</strong>
+          </div>
+          <div>
+            <span>Tesseract</span>
+            <strong>{{ setup_status.tesseract_path }}</strong>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if error %}
+        <div class="alert">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" enctype="multipart/form-data" class="tool-panel" id="pdf-form">
+        <label class="file-picker">
+          <span>PDF file</span>
+          <input type="file" name="pdf" accept="application/pdf" required>
+        </label>
+
+        <div class="controls">
+          <label>
+            <span>First page</span>
+            <input type="number" name="first_page" min="1" placeholder="1">
+          </label>
+          <label>
+            <span>Last page</span>
+            <input type="number" name="last_page" min="1" placeholder="All">
+          </label>
+          <label>
+            <span>DPI</span>
+            <input type="number" name="dpi" min="150" max="500" value="300">
+          </label>
+          <label>
+            <span>OCR language</span>
+            <input type="text" name="lang" value="hin+eng">
+          </label>
+        </div>
+
+        <button type="submit" id="process-button">Process PDF</button>
+      </form>
+
+      <div class="processing-panel" id="processing-panel" role="status" aria-live="polite" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <div>
+          <div class="processing-header">
+            <strong>Processing PDF...</strong>
+            <span id="progress-percent">0%</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <p id="progress-message">OCR can take a few minutes for large electoral rolls. Please keep this tab open.</p>
+        </div>
+      </div>
+
+      {% if result %}
+        <section class="results">
+          <div class="result-actions">
+            <h2>Dashboard</h2>
+            <div>
+              {% set job_id = result.job_id %}
+              <a href="{{ url_for('download', job_id=job_id, filename=result.details_path.name) }}">📊 Download Full Rows</a>
+              <a href="{{ url_for('download', job_id=job_id, filename=result.summary_path.name) }}">📋 Download Summary</a>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div>
+              <span>Total voters</span>
+              <strong>{{ result.dashboard.total_voters }}</strong>
+            </div>
+            <div>
+              <span>Pages processed</span>
+              <strong>{{ result.dashboard.pages_processed }}</strong>
+            </div>
+            <div>
+              <span>Extracted</span>
+              <strong>{{ result.dashboard.extracted }}</strong>
+            </div>
+            <div>
+              <span>Needs review</span>
+              <strong>{{ result.dashboard.needs_review }}</strong>
+            </div>
+          </div>
+
+          <div class="breakdowns">
+            <!-- Religion Breakdown -->
+            <section>
+              <h3>🛕 Religion Classification</h3>
+              {% if result.dashboard.religion_counts.empty %}
+                <p>No religion labels detected.</p>
+              {% else %}
+                {% for item in result.dashboard.religion_counts.to_dict('records') %}
+                  <div class="breakdown-item">
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.count }}</strong>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            </section>
+
+            <!-- Caste Breakdown -->
+            <section>
+              <h3>🏷️ Caste / Category</h3>
+              {% if result.dashboard.caste_counts.empty %}
+                <p>No caste labels detected.</p>
+              {% else %}
+                {% for item in result.dashboard.caste_counts.to_dict('records') %}
+                  <div class="breakdown-item">
+                    <span>{{ item.label }}</span>
+                    <strong>{{ item.count }}</strong>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            </section>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>Serial</th>
+                  <th>Name</th>
+                  <th>Guardian</th>
+                  <th>House</th>
+                  <th>Age</th>
+                  <th>Gender</th>
+                  <th>Religion</th>
+                  <th>Caste</th>
+                  <th>Status</th>
+                  <th>Raw OCR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rows %}
+                  <tr>
+                    <td>{{ row.page }}</td>
+                    <td>{{ row.serial_number }}</td>
+                    <td><strong>{{ row.name }}</strong></td>
+                    <td>{{ row.guardian_name }}</td>
+                    <td>{{ row.house_number }}</td>
+                    <td>{{ row.age }}</td>
+                    <td>{{ row.gender }}</td>
+                    <td>{{ row.religion_label }}</td>
+                    <td>{{ row.caste_label }}</td>
+                    <td><span class="pill {{ row.review_status }}">{{ row.review_status }}</span></td>
+                    <td style="font-size: 0.85em; color: #666;">{{ row.raw_text|truncate(80) }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% endif %}
+    </section>
+  </main>
+  <script>
+    const form = document.getElementById("pdf-form");
+    const panel = document.getElementById("processing-panel");
+    const button = document.getElementById("process-button");
+
+    const progressFill = document.getElementById("progress-fill");
+    const progressPercent = document.getElementById("progress-percent");
+    const progressMessage = document.getElementById("progress-message");
+
+    function setProgress(percent, message) {
+      const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+      progressFill.style.width = `${safePercent}%`;
+      progressPercent.textContent = `${safePercent}%`;
+      if (message) {
+        progressMessage.textContent = message;
+      }
+    }
+
+    async function pollProgress(jobId) {
+      const response = await fetch(`/progress/${jobId}`);
+      const progress = await response.json();
+
+      if (!response.ok) {
+        throw new Error(progress.error || "Unable to read progress.");
+      }
+
+      setProgress(progress.percent, progress.message);
+
+      if (progress.status === "complete") {
+        window.location.href = `/?job_id=${jobId}`;
+        return;
+      }
+
+      if (progress.status === "error") {
+        throw new Error(progress.error || progress.message || "Processing failed.");
+      }
+
+      window.setTimeout(() => pollProgress(jobId).catch(showError), 1000);
+    }
+
+    function showError(error) {
+      setProgress(100, error.message || "Processing failed.");
+      panel.classList.add("has-error");
+      button.disabled = false;
+      button.textContent = "Process PDF";
+      form.classList.remove("is-processing");
+    }
+
+    form.addEventListener("submit", async (event) => {
+      if (!form.checkValidity()) {
+        return;
+      }
+
+      event.preventDefault();
+      panel.hidden = false;
+      panel.classList.remove("has-error");
+      setProgress(0, "Uploading PDF...");
+      button.disabled = true;
+      button.textContent = "Processing...";
+      form.classList.add("is-processing");
+      panel.scrollIntoView({ behavior: "smooth", block: "center" });
+
+      try {
+        const response = await fetch("/process", {
+          method: "POST",
+          body: new FormData(form),
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Unable to start processing.");
+        }
+
+        setProgress(1, "Queued for processing...");
+        pollProgress(data.job_id).catch(showError);
+      } catch (error) {
+        showError(error);
+      }
+    });
+  </script>
+</body>
+</html>
