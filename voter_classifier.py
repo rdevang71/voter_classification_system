@@ -1,12 +1,14 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 import pandas as pd
 import pytesseract
-from pdf2image import convert_from_path
+from pdf2image import convert_from_path, pdfinfo_from_path
 from pytesseract import TesseractNotFoundError
 
 
@@ -16,7 +18,11 @@ DEFAULT_TESSERACT_PATHS = (
     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
 )
-DEFAULT_OCR_LANG = "hin+eng"
+DEFAULT_OCR_LANG = "hin"
+DEFAULT_DPI = 200
+DEFAULT_TESSERACT_CONFIG = "--oem 1 --psm 6"
+DEFAULT_MAX_OCR_WORKERS = 20
+DEFAULT_MAX_RENDER_WORKERS = 8
 REPORT_COLUMNS = [
     "page",
     "serial_number",
@@ -76,6 +82,7 @@ def configure_tesseract():
 def validate_setup():
     poppler_path = get_poppler_path()
     tesseract_path = configure_tesseract()
+    os.environ.setdefault("OMP_THREAD_LIMIT", "1")
     if LOCAL_TESSDATA_DIR.is_dir():
         os.environ["TESSDATA_PREFIX"] = str(LOCAL_TESSDATA_DIR)
 
@@ -91,6 +98,28 @@ def validate_setup():
         "poppler_path": poppler_path or "system PATH",
         "tesseract_path": tesseract_path or "system PATH",
     }
+
+
+def worker_count(total_items, env_name="VOTER_OCR_WORKERS", default_limit=DEFAULT_MAX_OCR_WORKERS):
+    if total_items <= 1:
+        return 1
+
+    configured = os.environ.get(env_name, "").strip()
+    if configured:
+        try:
+            return max(1, min(total_items, int(configured)))
+        except ValueError:
+            pass
+
+    return max(1, min(total_items, default_limit))
+
+
+def pdf_page_count(pdf_path, poppler_path):
+    info = pdfinfo_from_path(
+        str(pdf_path),
+        poppler_path=poppler_path if poppler_path != "system PATH" else None,
+    )
+    return int(info["Pages"])
 
 
 def clean_text(value):
@@ -657,11 +686,21 @@ def parse_voter_rows(text, page_number):
     return voters
 
 
+def ocr_page(image, page_number, lang):
+    text = pytesseract.image_to_string(image, lang=lang, config=DEFAULT_TESSERACT_CONFIG)
+    return page_number, parse_voter_rows(text, page_number)
+
+
+def ocr_image_file(image_path, page_number, lang):
+    text = pytesseract.image_to_string(str(image_path), lang=lang, config=DEFAULT_TESSERACT_CONFIG)
+    return page_number, parse_voter_rows(text, page_number)
+
+
 def extract_voters_from_pdf(
     pdf_path,
     first_page=None,
     last_page=None,
-    dpi=300,
+    dpi=DEFAULT_DPI,
     lang=DEFAULT_OCR_LANG,
     progress_callback=None,
 ):
@@ -670,31 +709,71 @@ def extract_voters_from_pdf(
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
     setup = validate_setup()
-    images = convert_from_path(
-        str(pdf_path),
-        dpi=dpi,
-        first_page=first_page,
-        last_page=last_page,
-        poppler_path=setup["poppler_path"] if setup["poppler_path"] != "system PATH" else None,
+    start_page = first_page or 1
+    pdf_pages = pdf_page_count(pdf_path, setup["poppler_path"])
+    end_page = last_page or pdf_pages
+    end_page = min(end_page, pdf_pages)
+    if start_page > end_page:
+        return pd.DataFrame([], columns=REPORT_COLUMNS)
+
+    page_numbers = list(range(start_page, end_page + 1))
+    total_pages = len(page_numbers)
+    ocr_workers = worker_count(total_pages)
+    render_workers = worker_count(
+        total_pages,
+        env_name="VOTER_RENDER_WORKERS",
+        default_limit=DEFAULT_MAX_RENDER_WORKERS,
     )
 
-    voters = []
-    start_page = first_page or 1
-    total_pages = len(images)
-    for offset, image in enumerate(images):
-        page_number = start_page + offset
-        print(f"Processing page {page_number}")
+    if progress_callback:
+        progress_callback(
+            0,
+            total_pages,
+            start_page,
+            f"Rendering {total_pages} page{'s' if total_pages != 1 else ''}...",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="voter_pages_") as image_dir:
+        image_paths = convert_from_path(
+            str(pdf_path),
+            dpi=dpi,
+            first_page=start_page,
+            last_page=end_page,
+            poppler_path=setup["poppler_path"] if setup["poppler_path"] != "system PATH" else None,
+            grayscale=True,
+            fmt="jpeg",
+            jpegopt={"quality": 85, "progressive": False, "optimize": False},
+            output_folder=image_dir,
+            paths_only=True,
+            thread_count=render_workers,
+        )
+
         if progress_callback:
             progress_callback(
-                offset,
+                0,
                 total_pages,
-                page_number,
-                f"Reading page {page_number} ({offset + 1} of {total_pages})...",
+                start_page,
+                f"Running OCR with {ocr_workers} worker{'s' if ocr_workers != 1 else ''}...",
             )
-        text = pytesseract.image_to_string(image, lang=lang)
-        voters.extend(parse_voter_rows(text, page_number))
-        if progress_callback:
-            progress_callback(offset + 1, total_pages, page_number)
+
+        page_results = {}
+        completed_pages = 0
+        with ThreadPoolExecutor(max_workers=ocr_workers) as executor:
+            futures = {
+                executor.submit(ocr_image_file, image_path, page_number, lang): page_number
+                for image_path, page_number in zip(image_paths, page_numbers)
+            }
+            for future in as_completed(futures):
+                page_number, page_voters = future.result()
+                print(f"Processed page {page_number}")
+                page_results[page_number] = page_voters
+                completed_pages += 1
+                if progress_callback:
+                    progress_callback(completed_pages, total_pages, page_number)
+
+    voters = []
+    for page_number in sorted(page_results):
+        voters.extend(page_results[page_number])
 
     return pd.DataFrame(voters, columns=REPORT_COLUMNS)
 
@@ -752,7 +831,7 @@ def process_pdf(
     output_dir="outputs",
     first_page=None,
     last_page=None,
-    dpi=300,
+    dpi=DEFAULT_DPI,
     lang=DEFAULT_OCR_LANG,
     progress_callback=None,
 ):
@@ -780,7 +859,7 @@ def main():
     parser.add_argument("--output-dir", default="outputs", help="Folder for Excel reports")
     parser.add_argument("--first-page", type=int, default=None)
     parser.add_argument("--last-page", type=int, default=None)
-    parser.add_argument("--dpi", type=int, default=300)
+    parser.add_argument("--dpi", type=int, default=DEFAULT_DPI)
     parser.add_argument("--lang", default=DEFAULT_OCR_LANG)
     args = parser.parse_args()
 

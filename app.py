@@ -7,7 +7,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
-from voter_classifier import SetupError, process_pdf, validate_setup
+from voter_classifier import DEFAULT_DPI, DEFAULT_OCR_LANG, SetupError, process_pdf, validate_setup
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -132,8 +132,8 @@ def index():
                         output_dir=output_dir,
                         first_page=parse_int(request.form.get("first_page")),
                         last_page=parse_int(request.form.get("last_page")),
-                        dpi=parse_int(request.form.get("dpi")) or 300,
-                        lang=(request.form.get("lang") or "hin+eng").strip(),
+                        dpi=parse_int(request.form.get("dpi")) or DEFAULT_DPI,
+                        lang=(request.form.get("lang") or DEFAULT_OCR_LANG).strip(),
                     )
 
                     DOWNLOADS[job_id] = {
@@ -170,14 +170,14 @@ def start_process():
     try:
         first_page = parse_int(request.form.get("first_page"))
         last_page = parse_int(request.form.get("last_page"))
-        dpi = parse_int(request.form.get("dpi")) or 300
+        dpi = parse_int(request.form.get("dpi")) or DEFAULT_DPI
     except ValueError:
         return jsonify({"error": "Page and DPI values must be valid numbers."}), 400
 
     job_id = uuid.uuid4().hex
     filename = secure_filename(uploaded_file.filename)
     file_bytes = uploaded_file.read()
-    lang = (request.form.get("lang") or "hin+eng").strip()
+    lang = (request.form.get("lang") or DEFAULT_OCR_LANG).strip()
     update_job(job_id, status="queued", percent=0, message="Queued for processing...")
 
     worker = threading.Thread(
