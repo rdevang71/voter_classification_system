@@ -267,7 +267,44 @@ RELIGION_KEYWORDS = {
     "nida", "nimra", "noorain", "rida", "roohi", "ruhi", "saba", "sadia", "sana", "sara", "sehrish", "shifa", 
     "sidra", "simra", "suhana", "tania", "tehzeeb", "umaima", "urooj", "warda", "yumna", "zara", "zoya", 
     "zunaira", "bhatti", "dewan", "faridi", "haqqani", "naqvi", "panhwar", "qadri", "saifi", "talpuri", 
-    "warraich"
+    "warraich",
+    # Common Devanagari spellings/transliterations seen in Hindi electoral rolls.
+    "अब्दुल", "अब्दुल्ला", "अब्दुल्लाह", "अबरार", "अदील", "अदनान", "अफजल", "अफसर",
+    "अफरीन", "अफशां", "अहमद", "अहसान", "अजहर", "अजीज", "अजरा", "अकरम", "अकबर",
+    "अख्तर", "अली", "अलिया", "अल्ताफ", "अमान", "अमीना", "अमीन", "आमिर", "आमिरा",
+    "अमर", "अम्मार", "अनस", "अनीस", "अनीसा", "अंजुम", "अंसारी", "अनवर", "आफताब",
+    "आसिफ", "आसमा", "आयशा", "आयेशा", "अयूब", "आजम", "बानो", "बेग", "बेगम",
+    "बिलाल", "बिलकिस", "बुशरा", "दाऊद", "दावूद", "एहसान", "एजाज", "इलियास",
+    "फईम", "फहीम", "फहद", "फैजान", "फैसल", "फैजल", "फखरी", "फराज", "फरहान",
+    "फरीद", "फरीदा", "फरीहा", "फारिया", "फारूक", "फारूकी", "फरजाना", "फरजाना",
+    "फातिमा", "फातिमाह", "फिरोज", "फिरदौस", "फौजिया", "फुरकान", "गनी", "गजाला",
+    "गुलाम", "गुलनाज", "गुलजार", "गुलशन", "हबीब", "हबीबा", "हफीज", "हाफिज",
+    "हैदर", "हलीमा", "हमीद", "हमजा", "हनीफ", "हारून", "हाशमी", "हसन", "हिना",
+    "हुसैन", "इब्राहिम", "इदरीस", "इफ्तिखार", "इकराम", "इलियास", "इमदाद", "इमरान",
+    "इनायत", "इकबाल", "इकरा", "इरफान", "इसहाक", "इशरत", "इस्लाम", "इस्माइल",
+    "जब्बार", "जाफरी", "जलाल", "जमाल", "जमील", "जमीला", "जन्नत", "जावेद", "जुनैद",
+    "करीम", "कलीम", "कमाल", "कामरान", "काशिफ", "काजमी", "खदीजा", "खालिद", "खान",
+    "खुर्शीद", "कुलसुम", "लतीफ", "लुबना", "लुकमान", "मदीना", "माहिरा", "महमूद",
+    "महबूब", "मेहर", "मेहबूब", "महमूद", "मरियम", "मरयम", "मसूद", "मकसूदन",
+    "मेमन", "मीर", "मिर्जा", "मिस्बाह", "मोहसिन", "मोमिन", "मुबारक", "मुदस्सिर",
+    "मुगल", "मुजाहिद", "मुख्तार", "मुनीर", "मुनव्वर", "मुनवर", "मुनव्वरी", "मुमताज",
+    "मुराद", "मुर्तजा", "मुश्ताक", "मुस्तफा", "नदीम",
+    "नईम", "नफीसा", "नरगिस", "नसीम", "नसीर", "नसरीन", "नवाज", "नाज", "नाजिया",
+    "नाजमा", "नाजनीन", "निलोफर", "नूर", "नूरानी", "नुसरत", "ओबैद", "ओमर", "उस्मान",
+    "परवीन", "परवेज", "पठान", "कादिर", "कमर", "कासिम", "कुरैशी", "राबिया", "रफिया",
+    "रहीला", "रईस", "रईसा", "रहीम", "रहमान", "राशिद", "राशिदा", "रजा", "रजवी",
+    "रेहाना", "रेहमान", "रियाज", "रिजवी", "रिजवान", "रूबी", "रुबी", "रूबीना",
+    "रुबिना", "रुकसाना", "रुखसाना", "रुमाना", "सबा", "सबीना", "साबिर", "सादिया",
+    "सईद", "सफिया", "सकीना", "सलीम", "सलीमा", "सलमा", "सलमान", "समीर", "सना",
+    "सानिया", "सरफराज", "सैयद", "शबाना", "शब्बीर", "शबनम", "शाहिद", "शेख", "शेख़",
+    "शाइस्ता", "शाकिर", "शम्स", "शरीफ", "शरीफ़", "शाजिया", "शहनाज", "शोएब", "सोहेल",
+    "सुफी", "सुल्तान", "सुमैया", "तबस्सुम", "ताहिर", "तनवीर", "तारिक", "तसनीम",
+    "उमैर", "उमर", "उस्मान", "उजैर", "उजमा", "वाहिद", "वसीम", "याह्या", "याकूब",
+    "यासमीन", "यासीन", "यासिर", "युसुफ", "जफर", "जहीर", "जाहिद", "जाहिदा", "जहरा", "जैनब",
+    "जाकिर", "जमीर", "जरीना", "जीनत", "जिया", "जुबैर", "जुल्फिकार", "जुम्मा", "सवाना",
+    "सवनम", "निसार", "नूरजहां", "नूरजहाँ", "रज्जाक", "रजाक", "रज़्ज़ाक", "रुस्तम",
+    "शकील", "शमीना", "इसरार", "अलीजान", "तसवीरन",
+    "ज़रीना", "फ़ईम", "फ़हीम", "फ़ैजान", "फ़ारूक", "फ़िरोज", "शरीफ़", "शेख़", "रज़्ज़ाक",
 ]
 ,
 
@@ -324,10 +361,11 @@ CASTE_KEYWORDS = {
         "rajbhar","gujjar","gurjar","kamboj","shakya",
         "katiyar","tomar","solanki","jaiswal","kori",
         "gadariya","prajapati","kumhar","nai","teli",
-        "kandu","barai","bari","bind","chaudhary","choudhary"
+        "kandu","barai","bari","bind","chaudhary","choudhary",
         "यादव","अहीर","कुर्मी","पटेल","मौर्य","सैनी","लोधी","पाल",
         "निषाद","केवट","कहार","राजभर","गुर्जर","कम्बोज","शाक्य",
-        "कटियार","तोमर","सोलंकी","जायसवाल","कोरी","प्रजापति",
+        "कटियार","तोमर","सोलंकी","जायसवाल","कोरी","चौधरी",
+        "प्रजापति",
         "कुम्हार","नाई","तेली","बिंद"
     ],
 
@@ -360,12 +398,94 @@ COMMON_NAME_TOKENS = {
     "rani",
     "lal",
     "ram",
+    "name",
+    "father",
+    "mother",
+    "husband",
+    "wife",
     "सिंह",
     "कुमार",
     "देवी",
     "रानी",
     "लाल",
     "राम",
+    "नाम",
+    "का",
+    "की",
+    "के",
+    "पति",
+    "पिता",
+    "माता",
+    "पत्नी",
+}
+
+
+AMBIGUOUS_RELIGION_TOKENS = {
+    # Common across communities; do not use a single token here as religion evidence.
+    "amar",
+    "aaryan",
+    "aryan",
+    "arman",
+    "arsh",
+    "azad",
+    "chaudhry",
+    "choudhary",
+    "dar",
+    "gulshan",
+    "hana",
+    "hina",
+    "kamal",
+    "malik",
+    "mannat",
+    "mehak",
+    "muskaan",
+    "noor",
+    "raj",
+    "rani",
+    "reshma",
+    "rubi",
+    "ruby",
+    "sana",
+    "sandeep",
+    "sara",
+    "sameer",
+    "simran",
+    "suhana",
+    "tania",
+    "अमर",
+    "आर्यन",
+    "अरमान",
+    "अर्श",
+    "आजाद",
+    "चौधरी",
+    "गुलशन",
+    "हिना",
+    "कमल",
+    "कमाल",
+    "मलिक",
+    "मन्नत",
+    "मेहक",
+    "मुस्कान",
+    "नूर",
+    "राज",
+    "रानी",
+    "रेशमा",
+    "रुबी",
+    "रूबी",
+    "सना",
+    "संदीप",
+    "सारा",
+    "समीर",
+    "सिमरन",
+    "सुहाना",
+    "तानिया",
+    # Christian list contains several broadly used Indian names.
+    "anita",
+    "sunita",
+    "mary",
+    "rani",
+    "अनीता",
+    "सुनीता",
 }
 
 
@@ -468,22 +588,31 @@ def name_tokens(name):
     return set(re.findall(r"[a-z']+|[\u0900-\u097F]+", clean_text(name).lower()))
 
 
-def has_keyword_token(name, keywords, ignore_common=False):
+def has_keyword_token(name, keywords, ignore_common=False, skip_tokens=None):
     tokens = name_tokens(name)
+    skip_tokens = skip_tokens or set()
     for keyword in keywords:
         keyword = clean_text(keyword).lower()
         if ignore_common and keyword in COMMON_NAME_TOKENS:
+            continue
+        if keyword in skip_tokens:
             continue
         if keyword in tokens:
             return True
     return False
 
 
-def classify_religion(name: str) -> str:
+def classify_religion(*values: str) -> str:
+    name = clean_text(" ".join(clean_text(value) for value in values if value))
     if not name:
         return "Unknown"
     for religion, keywords in RELIGION_KEYWORDS.items():
-        if has_keyword_token(name, keywords, ignore_common=True):
+        if has_keyword_token(
+            name,
+            keywords,
+            ignore_common=True,
+            skip_tokens=AMBIGUOUS_RELIGION_TOKENS,
+        ):
             return religion
     return "Hindu / Other"
 
@@ -565,7 +694,7 @@ def is_valid_voter_record(record):
 def finalize_voter(record):
     if not record or not record.get("name"):
         return None
-    record["religion_label"] = classify_religion(record["name"])
+    record["religion_label"] = classify_religion(record["name"], record.get("guardian_name"))
     record["caste_label"] = classify_caste(record["name"])
     record["review_status"] = classify_review_status(record["name"], record["raw_text"])
     return record if is_valid_voter_record(record) else None

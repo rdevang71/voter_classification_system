@@ -133,7 +133,6 @@
             <div>
               {% set job_id = result.job_id %}
               <a href="{{ url_for('download', job_id=job_id, filename=result.details_path.name) }}">📊 Download Full Rows</a>
-              <a href="{{ url_for('download', job_id=job_id, filename=result.summary_path.name) }}">📋 Download Summary</a>
             </div>
           </div>
 
