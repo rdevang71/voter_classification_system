@@ -51,7 +51,7 @@
       <header class="topbar">
         <div>
           <h1>Voter PDF Extractor</h1>
-          <p>Upload an electoral-roll PDF, OCR the pages, extract voters with <strong>Religion & Caste</strong> classification.</p>
+          <p>Upload one or more electoral-roll PDFs, OCR the pages in parallel, and extract voters with <strong>Religion & Caste</strong> classification.</p>
         </div>
         <div class="status {% if error %}bad{% else %}good{% endif %}">
           {% if setup_status %}
@@ -81,8 +81,8 @@
 
       <form method="post" enctype="multipart/form-data" class="tool-panel" id="pdf-form">
         <label class="file-picker">
-          <span>PDF file</span>
-          <input type="file" name="pdf" accept="application/pdf" required>
+          <span>PDF files</span>
+          <input type="file" name="pdf" accept="application/pdf" multiple required>
         </label>
 
         <div class="controls">
@@ -96,22 +96,22 @@
           </label>
           <label>
             <span>DPI</span>
-            <input type="number" name="dpi" min="150" max="500" value="300">
+            <input type="number" name="dpi" min="120" max="500" value="150">
           </label>
           <label>
             <span>OCR language</span>
-            <input type="text" name="lang" value="hin+eng">
+            <input type="text" name="lang" value="hin">
           </label>
         </div>
 
-        <button type="submit" id="process-button">Process PDF</button>
+        <button type="submit" id="process-button">Process PDFs</button>
       </form>
 
       <div class="processing-panel" id="processing-panel" role="status" aria-live="polite" hidden>
         <div class="spinner" aria-hidden="true"></div>
         <div>
           <div class="processing-header">
-            <strong>Processing PDF...</strong>
+            <strong>Processing PDFs...</strong>
             <span id="progress-percent">0%</span>
           </div>
           <div class="progress-track" aria-hidden="true">
@@ -137,6 +137,12 @@
               <span>Total voters</span>
               <strong>{{ result.dashboard.total_voters }}</strong>
             </div>
+            {% if result.dashboard.pdfs_processed %}
+              <div>
+                <span>PDFs processed</span>
+                <strong>{{ result.dashboard.pdfs_processed }}</strong>
+              </div>
+            {% endif %}
             <div>
               <span>Pages processed</span>
               <strong>{{ result.dashboard.pages_processed }}</strong>
@@ -187,6 +193,9 @@
             <table>
               <thead>
                 <tr>
+                  {% if rows and rows[0].pdf_file is defined %}
+                    <th>PDF</th>
+                  {% endif %}
                   <th>Page</th>
                   <th>Serial</th>
                   <th>Name</th>
@@ -203,6 +212,9 @@
               <tbody>
                 {% for row in rows %}
                   <tr>
+                    {% if row.pdf_file is defined %}
+                      <td>{{ row.pdf_file }}</td>
+                    {% endif %}
                     <td>{{ row.page }}</td>
                     <td>{{ row.serial_number }}</td>
                     <td><strong>{{ row.name }}</strong></td>
@@ -267,7 +279,7 @@
       setProgress(100, error.message || "Processing failed.");
       panel.classList.add("has-error");
       button.disabled = false;
-      button.textContent = "Process PDF";
+      button.textContent = "Process PDFs";
       form.classList.remove("is-processing");
     }
 
@@ -279,7 +291,7 @@
       event.preventDefault();
       panel.hidden = false;
       panel.classList.remove("has-error");
-      setProgress(0, "Uploading PDF...");
+      setProgress(0, "Uploading PDFs...");
       button.disabled = true;
       button.textContent = "Processing...";
       form.classList.add("is-processing");

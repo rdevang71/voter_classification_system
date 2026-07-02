@@ -19,10 +19,10 @@ DEFAULT_TESSERACT_PATHS = (
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
 )
 DEFAULT_OCR_LANG = "hin"
-DEFAULT_DPI = 200
+DEFAULT_DPI = 150
 DEFAULT_TESSERACT_CONFIG = "--oem 1 --psm 6"
 DEFAULT_MAX_OCR_WORKERS = 20
-DEFAULT_MAX_RENDER_WORKERS = 8
+DEFAULT_MAX_PAGE_WORKERS = 8
 REPORT_COLUMNS = [
     "page",
     "serial_number",
@@ -112,6 +112,11 @@ def worker_count(total_items, env_name="VOTER_OCR_WORKERS", default_limit=DEFAUL
             pass
 
     return max(1, min(total_items, default_limit))
+
+
+def default_page_worker_limit():
+    cpu_count = os.cpu_count() or 4
+    return max(2, min(DEFAULT_MAX_PAGE_WORKERS, cpu_count))
 
 
 def pdf_page_count(pdf_path, poppler_path):
@@ -696,6 +701,35 @@ def ocr_image_file(image_path, page_number, lang):
     return page_number, parse_voter_rows(text, page_number)
 
 
+def render_and_ocr_page(pdf_path, page_number, dpi, lang, poppler_path, image_dir):
+    image_paths = convert_from_path(
+        str(pdf_path),
+        dpi=dpi,
+        first_page=page_number,
+        last_page=page_number,
+        poppler_path=poppler_path if poppler_path != "system PATH" else None,
+        grayscale=True,
+        fmt="jpeg",
+        jpegopt={"quality": 80, "progressive": False, "optimize": False},
+        output_folder=image_dir,
+        output_file=f"{abs(hash(str(pdf_path.resolve())))}_{page_number}",
+        paths_only=True,
+        thread_count=1,
+    )
+    if not image_paths:
+        return page_number, []
+    return ocr_image_file(image_paths[0], page_number, lang)
+
+
+def pdf_page_range(pdf_path, setup, first_page=None, last_page=None):
+    pdf_pages = pdf_page_count(pdf_path, setup["poppler_path"])
+    start_page = first_page or 1
+    end_page = min(last_page or pdf_pages, pdf_pages)
+    if start_page > end_page:
+        return []
+    return list(range(start_page, end_page + 1))
+
+
 def extract_voters_from_pdf(
     pdf_path,
     first_page=None,
@@ -709,67 +743,53 @@ def extract_voters_from_pdf(
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
     setup = validate_setup()
-    start_page = first_page or 1
-    pdf_pages = pdf_page_count(pdf_path, setup["poppler_path"])
-    end_page = last_page or pdf_pages
-    end_page = min(end_page, pdf_pages)
-    if start_page > end_page:
+    page_numbers = pdf_page_range(pdf_path, setup, first_page=first_page, last_page=last_page)
+    if not page_numbers:
         return pd.DataFrame([], columns=REPORT_COLUMNS)
 
-    page_numbers = list(range(start_page, end_page + 1))
     total_pages = len(page_numbers)
-    ocr_workers = worker_count(total_pages)
-    render_workers = worker_count(
+    page_workers = worker_count(
         total_pages,
-        env_name="VOTER_RENDER_WORKERS",
-        default_limit=DEFAULT_MAX_RENDER_WORKERS,
+        env_name="VOTER_PAGE_WORKERS",
+        default_limit=default_page_worker_limit(),
     )
 
     if progress_callback:
         progress_callback(
             0,
             total_pages,
-            start_page,
-            f"Rendering {total_pages} page{'s' if total_pages != 1 else ''}...",
+            page_numbers[0],
+            f"Running OCR with {page_workers} page worker{'s' if page_workers != 1 else ''}...",
         )
 
     with tempfile.TemporaryDirectory(prefix="voter_pages_") as image_dir:
-        image_paths = convert_from_path(
-            str(pdf_path),
-            dpi=dpi,
-            first_page=start_page,
-            last_page=end_page,
-            poppler_path=setup["poppler_path"] if setup["poppler_path"] != "system PATH" else None,
-            grayscale=True,
-            fmt="jpeg",
-            jpegopt={"quality": 85, "progressive": False, "optimize": False},
-            output_folder=image_dir,
-            paths_only=True,
-            thread_count=render_workers,
-        )
-
-        if progress_callback:
-            progress_callback(
-                0,
-                total_pages,
-                start_page,
-                f"Running OCR with {ocr_workers} worker{'s' if ocr_workers != 1 else ''}...",
-            )
-
         page_results = {}
         completed_pages = 0
-        with ThreadPoolExecutor(max_workers=ocr_workers) as executor:
+        with ThreadPoolExecutor(max_workers=page_workers) as executor:
             futures = {
-                executor.submit(ocr_image_file, image_path, page_number, lang): page_number
-                for image_path, page_number in zip(image_paths, page_numbers)
+                executor.submit(
+                    render_and_ocr_page,
+                    pdf_path,
+                    page_number,
+                    dpi,
+                    lang,
+                    setup["poppler_path"],
+                    image_dir,
+                ): page_number
+                for page_number in page_numbers
             }
             for future in as_completed(futures):
                 page_number, page_voters = future.result()
-                print(f"Processed page {page_number}")
+                print(f"{pdf_path.name}: processed page {page_number}")
                 page_results[page_number] = page_voters
                 completed_pages += 1
                 if progress_callback:
-                    progress_callback(completed_pages, total_pages, page_number)
+                    progress_callback(
+                        completed_pages,
+                        total_pages,
+                        page_number,
+                        f"{pdf_path.name}: processed page {page_number}",
+                    )
 
     voters = []
     for page_number in sorted(page_results):
@@ -791,9 +811,18 @@ def labeled_counts(df, column_name):
 def build_dashboard(df):
     religion_counts = labeled_counts(df, "religion_label")
     caste_counts = labeled_counts(df, "caste_label")
+    pages_processed = 0
+    pdfs_processed = 0
+    if not df.empty:
+        if "pdf_file" in df:
+            pdfs_processed = int(df["pdf_file"].nunique())
+            pages_processed = int(df[["pdf_file", "page"]].drop_duplicates().shape[0])
+        else:
+            pages_processed = int(df["page"].nunique())
     return {
         "total_voters": int(len(df)),
-        "pages_processed": int(df["page"].nunique()) if not df.empty else 0,
+        "pdfs_processed": pdfs_processed,
+        "pages_processed": pages_processed,
         "extracted": int((df["review_status"] == "extracted").sum()) if not df.empty else 0,
         "needs_review": int((df["review_status"] == "needs_review").sum()) if not df.empty else 0,
         "religion_labeled": int((df["religion_label"] != "").sum()),
@@ -853,9 +882,111 @@ def process_pdf(
     }
 
 
+def process_pdfs(
+    pdf_paths,
+    output_dir="outputs",
+    first_page=None,
+    last_page=None,
+    dpi=DEFAULT_DPI,
+    lang=DEFAULT_OCR_LANG,
+    progress_callback=None,
+):
+    pdf_paths = [Path(path) for path in pdf_paths]
+    if not pdf_paths:
+        raise ValueError("Choose at least one PDF file to process.")
+
+    missing_paths = [str(path) for path in pdf_paths if not path.is_file()]
+    if missing_paths:
+        raise FileNotFoundError(f"PDF not found: {', '.join(missing_paths)}")
+
+    setup = validate_setup()
+    page_tasks = []
+    for pdf_path in pdf_paths:
+        display_name = re.sub(r"^\d{3}_", "", pdf_path.name)
+        for page_number in pdf_page_range(
+            pdf_path,
+            setup,
+            first_page=first_page,
+            last_page=last_page,
+        ):
+            page_tasks.append((pdf_path, display_name, page_number))
+
+    total_pages = len(page_tasks)
+    if not page_tasks:
+        empty_df = pd.DataFrame(columns=["pdf_file", *REPORT_COLUMNS])
+        details_path, summary_path, summary = write_reports(empty_df, output_dir)
+        return {
+            "data": empty_df,
+            "summary": summary,
+            "dashboard": build_dashboard(empty_df),
+            "details_path": details_path,
+            "summary_path": summary_path,
+        }
+
+    page_workers = worker_count(
+        total_pages,
+        env_name="VOTER_PAGE_WORKERS",
+        default_limit=default_page_worker_limit(),
+    )
+
+    if progress_callback:
+        progress_callback(
+            0,
+            total_pages,
+            0,
+            f"Processing {len(pdf_paths)} PDFs with {page_workers} shared page workers...",
+        )
+
+    page_results = {}
+    completed_pages = 0
+    with tempfile.TemporaryDirectory(prefix="voter_pages_") as image_dir:
+        with ThreadPoolExecutor(max_workers=page_workers) as executor:
+            futures = {
+                executor.submit(
+                    render_and_ocr_page,
+                    pdf_path,
+                    page_number,
+                    dpi,
+                    lang,
+                    setup["poppler_path"],
+                    image_dir,
+                ): (pdf_path, display_name, page_number)
+                for pdf_path, display_name, page_number in page_tasks
+            }
+            for future in as_completed(futures):
+                pdf_path, display_name, page_number = futures[future]
+                _, page_voters = future.result()
+                print(f"{display_name}: processed page {page_number}")
+                page_results[(pdf_path, page_number)] = (display_name, page_voters)
+                completed_pages += 1
+                if progress_callback:
+                    progress_callback(
+                        completed_pages,
+                        total_pages,
+                        page_number,
+                        f"{display_name}: processed page {page_number} ({completed_pages} of {total_pages})",
+                    )
+
+    voters = []
+    for pdf_path, display_name, page_number in page_tasks:
+        _, page_voters = page_results.get((pdf_path, page_number), (display_name, []))
+        for voter in page_voters:
+            voters.append({"pdf_file": display_name, **voter})
+
+    combined_df = pd.DataFrame(voters, columns=["pdf_file", *REPORT_COLUMNS])
+    details_path, summary_path, summary = write_reports(combined_df, output_dir)
+    return {
+        "data": combined_df,
+        "summary": summary,
+        "dashboard": build_dashboard(combined_df),
+        "details_path": details_path,
+        "summary_path": summary_path,
+    }
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Extract one voter per row from an electoral-roll PDF.")
-    parser.add_argument("pdf_path", help="Path to the PDF file to process")
+    parser = argparse.ArgumentParser(description="Extract one voter per row from electoral-roll PDFs.")
+    parser.add_argument("pdf_paths", nargs="+", help="Path to one or more PDF files to process")
     parser.add_argument("--output-dir", default="outputs", help="Folder for Excel reports")
     parser.add_argument("--first-page", type=int, default=None)
     parser.add_argument("--last-page", type=int, default=None)
@@ -864,20 +995,32 @@ def main():
     args = parser.parse_args()
 
     try:
-        result = process_pdf(
-            args.pdf_path,
-            output_dir=args.output_dir,
-            first_page=args.first_page,
-            last_page=args.last_page,
-            dpi=args.dpi,
-            lang=args.lang,
-        )
+        if len(args.pdf_paths) == 1:
+            result = process_pdf(
+                args.pdf_paths[0],
+                output_dir=args.output_dir,
+                first_page=args.first_page,
+                last_page=args.last_page,
+                dpi=args.dpi,
+                lang=args.lang,
+            )
+        else:
+            result = process_pdfs(
+                args.pdf_paths,
+                output_dir=args.output_dir,
+                first_page=args.first_page,
+                last_page=args.last_page,
+                dpi=args.dpi,
+                lang=args.lang,
+            )
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
     dashboard = result["dashboard"]
     print("\nDashboard:")
+    if dashboard["pdfs_processed"]:
+        print(f"PDFs processed: {dashboard['pdfs_processed']}")
     print(f"Total voters: {dashboard['total_voters']}")
     print(f"Pages processed: {dashboard['pages_processed']}")
     print(f"Extracted: {dashboard['extracted']}")

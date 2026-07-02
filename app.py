@@ -7,14 +7,14 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
-from voter_classifier import DEFAULT_DPI, DEFAULT_OCR_LANG, SetupError, process_pdf, validate_setup
+from voter_classifier import DEFAULT_DPI, DEFAULT_OCR_LANG, SetupError, process_pdfs, validate_setup
 
 
 BASE_DIR = Path(__file__).resolve().parent
 ALLOWED_EXTENSIONS = {".pdf"}
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 DOWNLOADS = {}
 JOBS = {}
 JOBS_LOCK = threading.Lock()
@@ -40,7 +40,14 @@ def get_job(job_id):
         return JOBS.get(job_id, {}).copy()
 
 
-def run_pdf_job(job_id, file_bytes, filename, first_page, last_page, dpi, lang):
+def result_to_downloads(result):
+    return {
+        result["details_path"].name: result["details_path"].read_bytes(),
+        result["summary_path"].name: result["summary_path"].read_bytes(),
+    }
+
+
+def run_pdf_job(job_id, uploaded_files, first_page, last_page, dpi, lang):
     def on_progress(done_pages, total_pages, page_number, message=None):
         percent = 10
         if total_pages:
@@ -52,16 +59,19 @@ def run_pdf_job(job_id, file_bytes, filename, first_page, last_page, dpi, lang):
         )
 
     try:
-        update_job(job_id, status="processing", percent=5, message="Saving uploaded PDF...")
+        update_job(job_id, status="processing", percent=5, message="Saving uploaded PDFs...")
         with tempfile.TemporaryDirectory(prefix="voter_pdf_") as temp_dir:
             temp_dir_path = Path(temp_dir)
-            pdf_path = temp_dir_path / filename
+            pdf_paths = []
             output_dir = temp_dir_path / "reports"
-            pdf_path.write_bytes(file_bytes)
+            for index, uploaded_file in enumerate(uploaded_files, start=1):
+                pdf_path = temp_dir_path / f"{index:03d}_{uploaded_file['filename']}"
+                pdf_path.write_bytes(uploaded_file["content"])
+                pdf_paths.append(pdf_path)
 
             update_job(job_id, percent=10, message="Converting PDF pages for OCR...")
-            result = process_pdf(
-                pdf_path,
+            result = process_pdfs(
+                pdf_paths,
                 output_dir=output_dir,
                 first_page=first_page,
                 last_page=last_page,
@@ -71,10 +81,7 @@ def run_pdf_job(job_id, file_bytes, filename, first_page, last_page, dpi, lang):
             )
 
             update_job(job_id, percent=95, message="Preparing Excel reports...")
-            DOWNLOADS[job_id] = {
-                result["details_path"].name: result["details_path"].read_bytes(),
-                result["summary_path"].name: result["summary_path"].read_bytes(),
-            }
+            DOWNLOADS[job_id] = result_to_downloads(result)
             result["job_id"] = job_id
             rows = result["data"].head(250).to_dict("records")
             update_job(
@@ -111,24 +118,28 @@ def index():
             error = job.get("error") or "Processing failed."
 
     if request.method == "POST" and not error:
-        uploaded_file = request.files.get("pdf")
-        if not uploaded_file or not uploaded_file.filename:
-            error = "Choose a PDF file first."
-        elif not allowed_file(uploaded_file.filename):
+        uploaded_files = [file for file in request.files.getlist("pdf") if file and file.filename]
+        invalid_files = [file.filename for file in uploaded_files if not allowed_file(file.filename)]
+        if not uploaded_files:
+            error = "Choose at least one PDF file first."
+        elif invalid_files:
             error = "Only PDF files are supported."
         else:
             job_id = uuid.uuid4().hex
-            filename = secure_filename(uploaded_file.filename)
 
             try:
                 with tempfile.TemporaryDirectory(prefix="voter_pdf_") as temp_dir:
                     temp_dir_path = Path(temp_dir)
-                    pdf_path = temp_dir_path / filename
                     output_dir = temp_dir_path / "reports"
-                    uploaded_file.save(pdf_path)
+                    pdf_paths = []
+                    for index, uploaded_file in enumerate(uploaded_files, start=1):
+                        filename = secure_filename(uploaded_file.filename)
+                        pdf_path = temp_dir_path / f"{index:03d}_{filename}"
+                        uploaded_file.save(pdf_path)
+                        pdf_paths.append(pdf_path)
 
-                    result = process_pdf(
-                        pdf_path,
+                    result = process_pdfs(
+                        pdf_paths,
                         output_dir=output_dir,
                         first_page=parse_int(request.form.get("first_page")),
                         last_page=parse_int(request.form.get("last_page")),
@@ -136,10 +147,7 @@ def index():
                         lang=(request.form.get("lang") or DEFAULT_OCR_LANG).strip(),
                     )
 
-                    DOWNLOADS[job_id] = {
-                        result["details_path"].name: result["details_path"].read_bytes(),
-                        result["summary_path"].name: result["summary_path"].read_bytes(),
-                    }
+                    DOWNLOADS[job_id] = result_to_downloads(result)
                     result["job_id"] = job_id
                 rows = result["data"].head(250).to_dict("records")
             except Exception as exc:
@@ -161,10 +169,10 @@ def start_process():
     except SetupError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    uploaded_file = request.files.get("pdf")
-    if not uploaded_file or not uploaded_file.filename:
-        return jsonify({"error": "Choose a PDF file first."}), 400
-    if not allowed_file(uploaded_file.filename):
+    uploaded_files = [file for file in request.files.getlist("pdf") if file and file.filename]
+    if not uploaded_files:
+        return jsonify({"error": "Choose at least one PDF file first."}), 400
+    if any(not allowed_file(file.filename) for file in uploaded_files):
         return jsonify({"error": "Only PDF files are supported."}), 400
 
     try:
@@ -175,14 +183,16 @@ def start_process():
         return jsonify({"error": "Page and DPI values must be valid numbers."}), 400
 
     job_id = uuid.uuid4().hex
-    filename = secure_filename(uploaded_file.filename)
-    file_bytes = uploaded_file.read()
+    files_payload = [
+        {"filename": secure_filename(file.filename), "content": file.read()}
+        for file in uploaded_files
+    ]
     lang = (request.form.get("lang") or DEFAULT_OCR_LANG).strip()
     update_job(job_id, status="queued", percent=0, message="Queued for processing...")
 
     worker = threading.Thread(
         target=run_pdf_job,
-        args=(job_id, file_bytes, filename, first_page, last_page, dpi, lang),
+        args=(job_id, files_payload, first_page, last_page, dpi, lang),
         daemon=True,
     )
     worker.start()
