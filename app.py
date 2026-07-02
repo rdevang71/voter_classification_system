@@ -1,5 +1,6 @@
 import tempfile
 import threading
+import time
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -40,6 +41,42 @@ def get_job(job_id):
         return JOBS.get(job_id, {}).copy()
 
 
+def format_duration(seconds):
+    if seconds is None:
+        return "Estimating..."
+    seconds = max(0, int(round(seconds)))
+    if seconds < 60:
+        return f"{seconds} sec"
+
+    minutes, remaining_seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes} min {remaining_seconds} sec" if remaining_seconds else f"{minutes} min"
+
+    hours, minutes = divmod(minutes, 60)
+    parts = [f"{hours} hr"]
+    if minutes:
+        parts.append(f"{minutes} min")
+    if remaining_seconds:
+        parts.append(f"{remaining_seconds} sec")
+    return " ".join(parts)
+
+
+def estimate_eta(job):
+    total_pages = int(job.get("total_pages") or 0)
+    done_pages = int(job.get("done_pages") or 0)
+    started_at = job.get("started_at")
+    if not total_pages or not done_pages or not started_at:
+        return None
+
+    remaining_pages = max(0, total_pages - done_pages)
+    if not remaining_pages:
+        return 0
+
+    elapsed_seconds = max(1, time.time() - started_at)
+    seconds_per_page = elapsed_seconds / done_pages
+    return remaining_pages * seconds_per_page
+
+
 def result_to_downloads(result):
     return {
         result["details_path"].name: result["details_path"].read_bytes(),
@@ -55,11 +92,21 @@ def run_pdf_job(job_id, uploaded_files, first_page, last_page, dpi, lang):
         update_job(
             job_id,
             percent=min(percent, 90),
+            done_pages=done_pages,
+            total_pages=total_pages,
             message=message or f"Processed page {page_number} ({done_pages} of {total_pages})",
         )
 
     try:
-        update_job(job_id, status="processing", percent=5, message="Saving uploaded PDFs...")
+        update_job(
+            job_id,
+            status="processing",
+            percent=5,
+            started_at=time.time(),
+            done_pages=0,
+            total_pages=0,
+            message="Saving uploaded PDFs...",
+        )
         with tempfile.TemporaryDirectory(prefix="voter_pdf_") as temp_dir:
             temp_dir_path = Path(temp_dir)
             pdf_paths = []
@@ -88,6 +135,7 @@ def run_pdf_job(job_id, uploaded_files, first_page, last_page, dpi, lang):
                 job_id,
                 status="complete",
                 percent=100,
+                done_pages=get_job(job_id).get("total_pages", 0),
                 message="Processing complete.",
                 result=result,
                 rows=rows,
@@ -188,7 +236,14 @@ def start_process():
         for file in uploaded_files
     ]
     lang = (request.form.get("lang") or DEFAULT_OCR_LANG).strip()
-    update_job(job_id, status="queued", percent=0, message="Queued for processing...")
+    update_job(
+        job_id,
+        status="queued",
+        percent=0,
+        done_pages=0,
+        total_pages=0,
+        message="Queued for processing...",
+    )
 
     worker = threading.Thread(
         target=run_pdf_job,
@@ -204,11 +259,22 @@ def progress(job_id):
     job = get_job(job_id)
     if not job:
         return jsonify({"error": "Job not found."}), 404
+    elapsed_seconds = None
+    started_at = job.get("started_at")
+    if started_at:
+        elapsed_seconds = max(0, time.time() - started_at)
+    eta_seconds = estimate_eta(job)
     return jsonify(
         {
             "status": job.get("status", "queued"),
             "percent": job.get("percent", 0),
             "message": job.get("message", ""),
+            "done_pages": job.get("done_pages", 0),
+            "total_pages": job.get("total_pages", 0),
+            "elapsed_seconds": elapsed_seconds,
+            "elapsed_label": format_duration(elapsed_seconds),
+            "eta_seconds": eta_seconds,
+            "eta_label": format_duration(eta_seconds),
             "error": job.get("error"),
         }
     )

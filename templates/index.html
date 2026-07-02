@@ -117,6 +117,11 @@
           <div class="progress-track" aria-hidden="true">
             <div class="progress-fill" id="progress-fill"></div>
           </div>
+          <div class="progress-stats">
+            <span>Time left: <strong id="eta-label">Estimating...</strong></span>
+            <span>Elapsed: <strong id="elapsed-label">0 sec</strong></span>
+            <span>Pages: <strong id="pages-label">0 / 0</strong></span>
+          </div>
           <p id="progress-message">OCR can take a few minutes for large electoral rolls. Please keep this tab open.</p>
         </div>
       </div>
@@ -243,6 +248,9 @@
     const progressFill = document.getElementById("progress-fill");
     const progressPercent = document.getElementById("progress-percent");
     const progressMessage = document.getElementById("progress-message");
+    const etaLabel = document.getElementById("eta-label");
+    const elapsedLabel = document.getElementById("elapsed-label");
+    const pagesLabel = document.getElementById("pages-label");
 
     function setProgress(percent, message) {
       const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
@@ -251,6 +259,14 @@
       if (message) {
         progressMessage.textContent = message;
       }
+    }
+
+    function setTiming(progress) {
+      etaLabel.textContent = progress.eta_label || "Estimating...";
+      elapsedLabel.textContent = progress.elapsed_label || "0 sec";
+      const donePages = Number(progress.done_pages) || 0;
+      const totalPages = Number(progress.total_pages) || 0;
+      pagesLabel.textContent = totalPages ? `${donePages} / ${totalPages}` : `${donePages}`;
     }
 
     async function pollProgress(jobId) {
@@ -262,8 +278,11 @@
       }
 
       setProgress(progress.percent, progress.message);
+      setTiming(progress);
 
       if (progress.status === "complete") {
+        setProgress(100, "Processing complete.");
+        etaLabel.textContent = "Done";
         window.location.href = `/?job_id=${jobId}`;
         return;
       }
@@ -277,6 +296,7 @@
 
     function showError(error) {
       setProgress(100, error.message || "Processing failed.");
+      etaLabel.textContent = "Stopped";
       panel.classList.add("has-error");
       button.disabled = false;
       button.textContent = "Process PDFs";
@@ -292,6 +312,7 @@
       panel.hidden = false;
       panel.classList.remove("has-error");
       setProgress(0, "Uploading PDFs...");
+      setTiming({ done_pages: 0, total_pages: 0, elapsed_label: "0 sec", eta_label: "Estimating..." });
       button.disabled = true;
       button.textContent = "Processing...";
       form.classList.add("is-processing");

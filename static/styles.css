@@ -263,6 +263,20 @@ button:disabled {
   margin-top: 10px;
 }
 
+.progress-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.progress-stats strong {
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
