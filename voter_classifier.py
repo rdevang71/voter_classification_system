@@ -150,6 +150,36 @@ def normalize_name_text(value):
     return clean_text(value).lower().translate(DEVANAGARI_NORMALIZE_MAP)
 
 
+DIGIT_NORMALIZE_MAP = str.maketrans(
+    {
+        "०": "0",
+        "१": "1",
+        "२": "2",
+        "३": "3",
+        "४": "4",
+        "५": "5",
+        "६": "6",
+        "७": "7",
+        "८": "8",
+        "९": "9",
+    }
+)
+
+
+def normalize_digits(value):
+    return clean_text(value).translate(DIGIT_NORMALIZE_MAP)
+
+
+def normalize_age(value):
+    digits = re.sub(r"\D", "", normalize_digits(value))
+    if not digits:
+        return ""
+    age = int(digits)
+    if 18 <= age <= 120:
+        return str(age)
+    return ""
+
+
 def has_voter_field(text):
     text = clean_text(text)
     return any(
@@ -214,7 +244,17 @@ def extract_house_number(text):
 
 
 def extract_age(text):
-    return first_match((r"(?:\u0906\u092f\u0941|Age)\s*[:\-]?\s*(\d{1,3})",), text)
+    text = normalize_digits(text)
+    patterns = (
+        r"(?:\u0906\u092f\u0941|\u0909\u092e\u094d\u0930|Age|Years?)\s*[:\-\uff1a]?\s*([0-9]{1,3})(?=\s*(?:\u0935\u0930\u094d\u0937|\u0932\u093f\u0902\u0917|Gender|Sex|\b))",
+        r"(?:\u0906\u092f\u0941|\u0909\u092e\u094d\u0930|Age|Years?)\s*[:\-\uff1a]?\s*([0-9]{1,3})",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            age = normalize_age(match.group(1))
+            if age:
+                return age
+    return ""
 
 
 def extract_gender(text):
@@ -782,13 +822,14 @@ def extract_repeated_house_numbers(text):
 
 
 def extract_repeated_age_gender(text):
+    text = normalize_digits(text)
     pairs = []
     for match in re.finditer(
-        r"(?:\u0906\u092f\u0941|Age)\s*[:\-]?\s*([0-9\u0966-\u096f]{1,3})\s*(?:\u0932\u093f\u0902\u0917|Gender|Sex)\s*[:\-]?\s*([A-Za-z\u0900-\u097F]+)",
+        r"(?:\u0906\u092f\u0941|\u0909\u092e\u094d\u0930|Age|Years?)\s*[:\-\uff1a]?\s*([0-9]{1,3})\s*(?:\u0935\u0930\u094d\u0937|yrs?|years?)?\s*(?:\u0932\u093f\u0902\u0917|Gender|Sex)\s*[:\-\uff1a]?\s*([A-Za-z\u0900-\u097F]+)",
         text,
         re.IGNORECASE,
     ):
-        pairs.append((clean_text(match.group(1)), clean_text(match.group(2))))
+        pairs.append((normalize_age(match.group(1)), clean_text(match.group(2))))
     return pairs
 
 
