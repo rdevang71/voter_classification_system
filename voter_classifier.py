@@ -131,6 +131,25 @@ def clean_text(value):
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+DEVANAGARI_NORMALIZE_MAP = str.maketrans(
+    {
+        "क़": "क",
+        "ख़": "ख",
+        "ग़": "ग",
+        "ज़": "ज",
+        "ड़": "ड",
+        "ढ़": "ढ",
+        "फ़": "फ",
+        "य़": "य",
+        "़": "",
+    }
+)
+
+
+def normalize_name_text(value):
+    return clean_text(value).lower().translate(DEVANAGARI_NORMALIZE_MAP)
+
+
 def has_voter_field(text):
     text = clean_text(text)
     return any(
@@ -213,61 +232,7 @@ def extract_serial_number(text):
 
 RELIGION_KEYWORDS = {
    "MUSLIM":[
-  # ... (full 2000+ list - abbreviated here for response length)
-  "aaban", "aabid", "aadam", "aadil", "aafaq", "aahil", "aakif", "aali", "aalia", "aamin", "aarif", "aariz", 
-  "aaryan", "aashir", "aasim", "aayan", "aazam", "abdal", "abdalla", "abdallah", "abdi", "abdul", "abdulaziz"
-  , "abdulbasit", "abdulgaffar", "abdulgani", "abdulhakeem", "abdulhamid", "abduljaleel", "abdulkarim", "abdulkhaliq",
-   "abdullah", "abdulmajid", "abdulmalik", "abdulqadir", "abdulrahim", "abdulrahman", "abdulsalam", 
-  "abdulwahid", "abdurrahman", "abid", "abir", "abraar", "abrar", "abu", "abubakar", "adam", "adil", "adnan",
-   "afreen", "afridi", "afshan", "afzal", "ahad", "ahluwalia", "ahmad", "ahmed", "ahsan", "aisha", "aishah", 
-   "akbar", "akhtar", "akram", "alam", "alavi", "aleena", "al-farsi", "al-hanafi", "al-hashimi", "al-kazmi", 
-   "al-madani", "al-makki", "al-mansoori", "al-masri", "al-najjar", "al-qadir", "al-qureshi", "al-rashid", 
-   "al-saadi", "al-siddiqi", "al-tamimi", "al-tunisi", "al-yamani", "ali", "alina", "aliya", "alishba", 
-   "altaf", "alvi", "amaan", "amana", "amara", "ameer", "amin", "amina", "amir", "amira", "amjad", "ammar", 
-   "amna", "anas", "anisa", "anjum", "ansari", "ansariwala", "anwar", "aqeel", "arain", "arbaaz", "arham",
-    "arif", "arshad", "asad", "asfiya", "ashfaq", "ashraf", "ashrafi", "asif", "aslam", "asma", "asrar",
-    "atif", "atiq", "attari", "ayaan", "ayub", "ayesha", "aysha", "azam", "azhar", "aziz", "azra", "baig",
-    "bandey", "barqi", "basri", "beg", "benazir", "bhatti", "bilal", "bilqis", "bukhari", "burhan", "bushra",
-    "butt", "chaudhry", "chishti", "choudhary", "dar", "darzi", "dawood", "dehlavi", "dewani", "durrani",
-    "ehsan", "ejaz", "elyas", "faheem", "fahad", "faisal", "faizan", "fakhri", "faraz", "farhan", "farid",
-    "farida", "fariha", "fariya", "farooq", "farooqi", "farzana", "fatehpuri", "fatima", "fatimah", "feroz",   
-    "firdaus", "firoz", "fouzia", "furqan", "ghani", "ghazala", "ghaznavi", "ghulam", "gilani", "gulnaz", 
-    "gulshan", "gulzar", "habib", "habiba", "hafeez", "hafiz", "haider", "haleema", "halima", "hamid",
-    "hamza", "hana", "hanif", "haniya", "haqqani", "haris", "haroon", "hashmi", "hasan", "hassan", "hilal",
-    "hina", "huma", "humaira", "husaini", "hussain", "ibrahim", "idrees", "idris", "iftikhar", "ikram", 
-    "ilyas", "imdad", "imran", "inayat", "iqbal", "iqra", "irfan", "ishaq", "ishrat", "ismail", "jabbar", 
-    "jafri", "jalal", "jalali", "jamali", "jamal", "jameel", "jamila", "jannat", "javed", "johari", "junaid", 
-    "kaleem", "kamal", "kamali", "kamran", "karim", "karimi", "kashif", "kazmi", "khadija", "khalid", "khan", 
-    "khanzada", "khattak", "khurshid", "kulsum", "lashari", "lateef", "latif", "lodhi", "lubna", "luqman", 
-    "madani", "mahira", "mahjabeen", "mahmood", "mahnoor", "mahreen", "majid", "makki", "malik", "mansoor", 
-    "mansoori", "mariam", "maryam", "masood", "meher", "mehmood", "mehboob", "mehreen", "memon", "mewati", 
-    "mir", "miraj", "mirza", "misbah", "mohsin", "momin", "mubarak", "mudassir", "mughal", "muhajir", "mujahid", 
-    "mukhtar", "munir", "mumtaz", "murad", "murtaza", "mushtaq", "mustafa", "nadeem", "naeem", "nafeesa", 
-    "nargis", "naseem", "nasir", "nasreen", "nawaz", "nazia", "nazma", "nazneen", "nilofer", "nizami", "noor",
-     "noorani", "nouman", "noman", "nusrat", "obaid", "omar", "orakzai", "osman", "osmani", "othman", "parveen",
-      "parvez", "pathan", "pirzada", "qadeer", "qadir", "qamar", "qasim", "qasmi", "qureshi", "rabia", "rafia", 
-      "raheela", "raisa", "rahim", "rahman", "rashid", "rashida", "raza", "razvi", "rehana", "rehman", "rehmani",
-       "riaz", "rizvi", "rizwan", "rubina", "rukhsana", "rumana", "saba", "sabina", "sabir", "sabri", "sabiha", 
-       "sadia", "saeed", "safiya", "sakina", "salim", "salma", "salman", "sameer", "sana", "saniya", "sarfaraz",
-    "sayyid", "shabana", "shabbir", "shahid", "shaikh", "shaista", "shakir", "shams", "sharif", "shazia", 
-    "shehnaz", "sheikh", "shoaib", "sohail", "soomro", "sufi", "suhail", "sultan", "sumaiya", "syed", 
-    "tabassum", "tahir", "tanveer", "tariq", "tasneem", "umair", "umar", "usman", "uzair", "uzma", "wahid",
-    "waqar", "waseem", "yahya", "yaqoob", "yaseen", "yasir", "yousuf", "zafar", "zaheer", "zahid", "zahida",
-    "zahra", "zainab", "zakaria", "zakir", "zameer", "zarina", "zeenat", "zia", "zubair", "zuberi", 
-    "zulfiqar",
-  # Additional 1500+ from expanded sources (common Indian Muslim names/surnames + variants)
-  "aarifa", "abdur", "aboobacker", "afiya", "ahamed", "alima", "anabia", "arjumand", "armaan", "ayaana",
-   "benazeer", "danyaal", "erfana", "fauziya", "gulzar", "hasnain", "insiya", "irfana", "jasira", "maimoona",
-    "mannat", "mishkat", "mohiuddin", "moinuddin", "moosa", "naaz", "qamarunnisa", "rayyan", "saif", "saima", 
-    "saleem", "sanaullah", "shagufta", "shah", "siddiqui", "tabrizi", "tirmizi", "usmani", "wahhabi", "warraich",
-    "yazdi", "yousufi", "zain", "zaki", "zakiullah", "zaynab", "aahaan", "aara", "aayat", "abrar", "adeel", 
-    "afra", "ahil", "aiza", "alina", "aliza", "amna", "anaya", "arisha", "arman", "arsh", "asiya", "ayra", 
-    "azaan", "bushra", "daniya", "eisha", "emaan", "faiza", "fiza", "hadiya", "hania", "hira", "hoor", "inaya", 
-    "irha", "isha", "izaan", "maha", "maira", "maisa", "manha", "mehak", "mehwish", "misha", "muskaan", "naima", 
-    "nida", "nimra", "noorain", "rida", "roohi", "ruhi", "saba", "sadia", "sana", "sara", "sehrish", "shifa", 
-    "sidra", "simra", "suhana", "tania", "tehzeeb", "umaima", "urooj", "warda", "yumna", "zara", "zoya", 
-    "zunaira", "bhatti", "dewan", "faridi", "haqqani", "naqvi", "panhwar", "qadri", "saifi", "talpuri", 
-    "warraich",
+
     # Common Devanagari spellings/transliterations seen in Hindi electoral rolls.
     "अब्दुल", "अब्दुल्ला", "अब्दुल्लाह", "अबरार", "अदील", "अदनान", "अफजल", "अफसर",
     "अफरीन", "अफशां", "अहमद", "अहसान", "अजहर", "अजीज", "अजरा", "अकरम", "अकबर",
@@ -341,6 +306,66 @@ RELIGION_KEYWORDS = {
         "lourdes", "fatima", "rosario", "anita", "sunita", "rani", "sister", "father"
     ],
 }
+
+RELIGION_KEYWORDS["MUSLIM"].extend(
+    [
+        "आलम",
+        "असफाक",
+        "अशफाक",
+        "नाजिश",
+        "शमीम",
+        "शम्सुद्दीन",
+        "शमसुद्दीन",
+        "शामसुद्दीन",
+    ]
+)
+
+MUSLIM_STRONG_DEVANAGARI_EXTENSIONS = {
+    # Surnames, titles, and community names that are strong evidence in Hindi OCR.
+    "अंसारी", "खान", "खां", "बेग", "बेगम", "सैयद", "सय्यद", "शेख", "शेख़",
+    "पठान", "कुरैशी", "कुरेशी", "काजमी", "काज़मी", "रिजवी", "रज़वी", "जाफरी",
+    "जाफ़री", "हाशमी", "उस्मानी", "मंसूरी", "नकवी", "नक़वी", "मुगल", "मेमन",
+    "मुसलमान", "मौलाना", "मौलवी", "हाजी", "मियाँ", "मियां",
+
+    # Common male names and compound-name parts.
+    "मोहम्मद", "मोहमद", "मुहम्मद", "मुहम्मद", "मोहम्मद", "मो", "मौ",
+    "अब्दुल", "अब्दुल्ला", "अब्दुल्लाह", "अहमद", "अहमद", "महमूद", "मेहमूद",
+    "अली", "हसन", "हुसैन", "हुसैन", "शरीफ", "शरीफ़", "शरीफुद्दीन", "दीन",
+    "फईम", "फहीम", "फैजान", "फैसल", "फारूक", "फारूकी", "फिरोज", "फुरकान",
+    "इकबाल", "इरफान", "इस्लाम", "इस्माइल", "इमरान", "इलियास", "इब्राहिम",
+    "इदरीस", "इसहाक", "इसरार", "इश्तियाक", "इफ्तिखार", "इकराम", "इनायत",
+    "जावेद", "जुबैर", "जुनैद", "जाकिर", "जमील", "जमाल", "जलाल", "जब्बार",
+    "करीम", "कलीम", "कामरान", "काशिफ", "खालिद", "लतीफ", "लुकमान", "मसूद",
+    "मकसूद", "मकसूदन", "मोहसिन", "मोमिन", "मुबारक", "मुदस्सिर", "मुजाहिद",
+    "मुख्तार", "मुनीर", "मुनव्वर", "मुनवर", "मुराद", "मुर्तजा", "मुश्ताक",
+    "मुस्तफा", "नदीम", "नईम", "नसीम", "नसीर", "नवाज", "निसार", "परवेज",
+    "कादिर", "कासिम", "रईस", "रफीक", "रहीम", "रहमान", "राशिद", "रियाज",
+    "रिजवान", "साबिर", "सईद", "सलीम", "सलमान", "सरफराज", "शब्बीर", "शकील",
+    "शाकिर", "शम्स", "शम्सुद्दीन", "शमसुद्दीन", "शामसुद्दीन", "शामशुद्दीन",
+    "शमशुद्दीन", "शमीम", "शाहिद", "शोएब", "सोहेल", "ताहिर", "तनवीर",
+    "तारिक", "उमैर", "उमर", "उस्मान", "उजैर", "वाहिद", "वसीम", "याकूब",
+    "यासीन", "यासिर", "युसुफ", "जफर", "जहीर", "जाहिद", "जिया", "रज्जाक",
+    "रजाक", "रुस्तम", "अलीजान", "जुम्मा", "आलम", "असफाक", "अशफाक",
+
+    # Common female names that are strong evidence unless listed as ambiguous below.
+    "आयशा", "आयेशा", "अमीना", "अनीसा", "अफरीन", "अफशां", "फातिमा", "फातिमाह",
+    "फरीदा", "फरीहा", "फरजाना", "फौजिया", "गुलनाज", "हलीमा", "खदीजा",
+    "कुलसुम", "लुबना", "माहिरा", "मरियम", "मरयम", "नफीसा", "नरगिस",
+    "नसरीन", "नाजिया", "नाजमा", "नाजनीन", "निलोफर", "परवीन", "राबिया",
+    "रफिया", "रहीला", "रईसा", "राशिदा", "रेहाना", "रूबीना", "रुकसाना",
+    "रुखसाना", "सबीना", "सादिया", "सफिया", "सकीना", "सलीमा", "सलमा",
+    "शबाना", "शबनम", "शमीना", "शाइस्ता", "शाजिया", "शहनाज", "सुमैया",
+    "तबस्सुम", "तसनीम", "उजमा", "यासमीन", "जाहिदा", "जहरा", "जैनब",
+    "जरीना", "जीनत", "तसवीरन", "नाजिश",
+
+    # OCR/roll variants often seen in Hindi PDFs.
+    "अहमद", "अहमद", "हनीफ", "हनीफ़", "हफीज", "हाफिज", "हाफ़िज", "रहमत",
+    "नूरजहां", "नूरजहाँ", "नूरजंहा", "नूरजहाँ", "नूर आलम", "शमीम जहां",
+    "शमीम जहा", "रज़्ज़ाक", "रज़्ज़ाक", "रज्‍जाक",
+}
+
+RELIGION_KEYWORDS["MUSLIM"].extend(sorted(MUSLIM_STRONG_DEVANAGARI_EXTENSIONS))
+
 CASTE_KEYWORDS = {
 
     "General": [
@@ -585,14 +610,14 @@ CASTE_KEYWORDS["ST"].extend(
 
 
 def name_tokens(name):
-    return set(re.findall(r"[a-z']+|[\u0900-\u097F]+", clean_text(name).lower()))
+    return set(re.findall(r"[a-z']+|[\u0900-\u097F]+", normalize_name_text(name)))
 
 
 def has_keyword_token(name, keywords, ignore_common=False, skip_tokens=None):
     tokens = name_tokens(name)
-    skip_tokens = skip_tokens or set()
+    skip_tokens = {normalize_name_text(token) for token in (skip_tokens or set())}
     for keyword in keywords:
-        keyword = clean_text(keyword).lower()
+        keyword = normalize_name_text(keyword)
         if ignore_common and keyword in COMMON_NAME_TOKENS:
             continue
         if keyword in skip_tokens:
