@@ -60,7 +60,7 @@ pip install gunicorn
 ```bash
 cd /var/www/voter_classifier
 source venv/bin/activate
-VOTER_PAGE_WORKERS=4 OMP_THREAD_LIMIT=1 gunicorn -w 1 -b 127.0.0.1:5000 --timeout 1800 app:app
+VOTER_PAGE_WORKERS=12 OMP_THREAD_LIMIT=2 gunicorn -w 1 -b 127.0.0.1:5000 --timeout 1800 app:app
 ```
 
 In another terminal:
@@ -88,8 +88,8 @@ After=network.target
 User=www-data
 Group=www-data
 WorkingDirectory=/var/www/voter_classifier
-Environment="VOTER_PAGE_WORKERS=4"
-Environment="OMP_THREAD_LIMIT=1"
+Environment="VOTER_PAGE_WORKERS=12"
+Environment="OMP_THREAD_LIMIT=2"
 ExecStart=/var/www/voter_classifier/venv/bin/gunicorn -w 1 -b 127.0.0.1:5000 --timeout 1800 app:app
 Restart=always
 RestartSec=5
@@ -195,13 +195,5 @@ sudo systemctl restart nginx
 Use:
 
 ```bash
-VOTER_PAGE_WORKERS=4
+VOTER_PAGE_WORKERS=12
 ```
-
-Suggested:
-
-- 2 vCPU: `2`
-- 4 vCPU: `4`
-- 8 vCPU: `6` or `8`
-
-Keep Gunicorn at `-w 1` because OCR pages are already processed in parallel inside the app.
