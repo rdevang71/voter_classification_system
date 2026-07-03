@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytesseract
 from pdf2image import convert_from_path, pdfinfo_from_path
+from PIL import Image
 from pytesseract import TesseractNotFoundError
 
 
@@ -19,7 +20,7 @@ DEFAULT_TESSERACT_PATHS = (
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
 )
 DEFAULT_OCR_LANG = "hin"
-DEFAULT_DPI = 150
+DEFAULT_DPI = 300
 DEFAULT_TESSERACT_CONFIG = "--oem 1 --psm 6"
 DEFAULT_MAX_OCR_WORKERS = 20
 DEFAULT_MAX_PAGE_WORKERS = 8
@@ -167,7 +168,8 @@ DIGIT_NORMALIZE_MAP = str.maketrans(
 
 
 def normalize_digits(value):
-    return clean_text(value).translate(DIGIT_NORMALIZE_MAP)
+    value = clean_text(value).translate(DIGIT_NORMALIZE_MAP)
+    return re.sub(r"(?<=\d)[|Il\u0964]|[|Il\u0964](?=\d|$)", "1", value)
 
 
 def normalize_age(value):
@@ -203,8 +205,34 @@ def first_match(patterns, text, flags=re.IGNORECASE):
     for pattern in patterns:
         match = re.search(pattern, text, flags)
         if match:
-            return clean_text(match.group(1))
+            return clean_field_value(match.group(1))
     return ""
+
+
+FIELD_LABEL_PATTERN = (
+    r"(?:"
+    r"\u092e\u0924\u0926\u093e\u0924\u093e\s+\u0915\u093e\s+\u0928\u093e\u092e|"
+    r"\u092a\u093f\u0924\u093e\s+\u0915\u093e\s+\u0928\u093e\u092e|"
+    r"\u092a\u0924\u093f\s+\u0915\u093e\s+\u0928\u093e\u092e|"
+    r"\u092e\u0915\u093e\u0928\s+\u0938\u0902\u0916\u094d\u092f\u093e|"
+    r"\u0928\u093e\u092e|"
+    r"\u0906\u092f\u0941|"
+    r"\u0909\u092e\u094d\u0930|"
+    r"\u0932\u093f\u0902\u0917|"
+    r"Elector'?s?\s+Name|Father'?s?\s+Name|Husband'?s?\s+Name|Mother'?s?\s+Name|"
+    r"House\s+Number|House\s+No|Name|Age|Years?|Gender|Sex"
+    r")"
+)
+
+
+def clean_field_value(value):
+    value = clean_text(value)
+    value = re.sub(r"\[?\s*\u092b\u094b\u091f\u094b\s+\u0909\u092a\u0932\u092c\u094d\u0927.*$", "", value)
+    value = re.sub(r"\s*\|.*$", "", value)
+    value = re.split(rf"\s+(?={FIELD_LABEL_PATTERN}\s*[:\-\uff1a]?)", value, maxsplit=1, flags=re.IGNORECASE)[0]
+    value = re.sub(rf"\s+{FIELD_LABEL_PATTERN}\s*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"^[\s:：\-\|,;]+|[\s:：\-\|,;]+$", "", value)
+    return clean_text(value)
 
 
 def extract_name(text):
@@ -228,6 +256,7 @@ def extract_guardian(text):
         (
             r"(?:\u092a\u093f\u0924\u093e\s+\u0915\u093e\s+\u0928\u093e\u092e|Father'?s?\s+Name)\s*[:\-]?\s*([^\d|,;:]+)",
             r"(?:\u092a\u0924\u093f\s+\u0915\u093e\s+\u0928\u093e\u092e|Husband'?s?\s+Name)\s*[:\-]?\s*([^\d|,;:]+)",
+            r"(?:\u092e\u093e\u0924\u093e\s+\u0915\u093e\s+\u0928\u093e\u092e)\s*[:\-]?\s*([^\d|,;:]+)",
             r"(?:Mother'?s?\s+Name)\s*[:\-]?\s*([^\d|,;:]+)",
         ),
         text,
@@ -235,12 +264,15 @@ def extract_guardian(text):
 
 
 def extract_house_number(text):
-    return first_match(
+    house_number = first_match(
         (
-            r"(?:\u092e\u0915\u093e\u0928\s+\u0938\u0902\u0916\u094d\u092f\u093e|House\s+Number|House\s+No)\s*[:\-]?\s*([A-Za-z0-9\/\-]+)",
+            r"(?:\u092e\u0915\u093e\u0928\s+\u0938\u0902\u0916\u094d\u092f\u093e|House\s+Number|House\s+No)\s*[:;\-\uff1a]?\s*([A-Za-z0-9\u0966-\u096f|Il\u0964\/\-.]+)",
         ),
         text,
     )
+    house_number = normalize_digits(house_number)
+    house_number = re.sub(r"[^A-Za-z0-9\/\-.]", "", house_number)
+    return house_number
 
 
 def extract_age(text):
@@ -697,8 +729,6 @@ def classify_review_status(name, raw_text):
         return "needs_review"
     if len(name) < 3 or any(char.isdigit() for char in name):
         return "needs_review"
-    if len(raw_text) > 220:
-        return "needs_review"
     return "extracted"
 
 
@@ -761,8 +791,14 @@ def finalize_voter(record):
         return None
     record["religion_label"] = classify_religion(record["name"], record.get("guardian_name"))
     record["caste_label"] = classify_caste(record["name"])
-    record["review_status"] = classify_review_status(record["name"], record["raw_text"])
-    return record if is_valid_voter_record(record) else None
+    if not is_valid_voter_record(record):
+        return None
+    required_fields = ("name", "guardian_name", "house_number", "age", "gender")
+    if all(clean_text(record.get(field)) for field in required_fields):
+        record["review_status"] = classify_review_status(record["name"], record["raw_text"])
+    else:
+        record["review_status"] = "needs_review"
+    return record
 
 
 def blank_voter(page_number):
@@ -788,19 +824,19 @@ def repeated_values(text, marker_pattern):
 
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        value = clean_text(text[match.end() : end])
-        value = re.sub(r"\[?\s*\u092b\u094b\u091f\u094b\s+\u0909\u092a\u0932\u092c\u094d\u0927.*$", "", value)
-        value = re.sub(r"\s*\|.*$", "", value)
-        values.append(clean_text(value))
+        value = clean_field_value(text[match.end() : end])
+        if value:
+            values.append(value)
 
     return values
 
 
 def extract_repeated_names(text):
     text = clean_text(text)
-    if not re.match(r"^(?:\u0928\u093e\u092e|Name)\s*[:\-\uff1a]?", text, re.IGNORECASE):
+    name_marker = r"(?<!\u0915\u093e\s)(?:^|\s)(?:\u0928\u093e\u092e|Name)\s*[:\-\uff1a]?"
+    if len(list(re.finditer(name_marker, text, re.IGNORECASE))) < 2:
         return []
-    return repeated_values(text, r"(?:^|\s)(?:\u0928\u093e\u092e|Name)\s*[:\-\uff1a]?")
+    return repeated_values(text, name_marker)
 
 
 def extract_repeated_guardians(text):
@@ -833,6 +869,108 @@ def extract_repeated_age_gender(text):
     return pairs
 
 
+def line_text_from_ocr_group(group):
+    return clean_text(" ".join(str(text) for text in group.sort_values("left")["text"] if str(text) != "nan"))
+
+
+def card_grid_bounds(width, height):
+    x_starts = [0.02 * width, 0.34 * width, 0.658 * width]
+    cell_width = 0.318 * width
+    y_start = 0.035 * height
+    row_pitch = 0.0933 * height
+    cell_height = 0.088 * height
+    return x_starts, cell_width, y_start, row_pitch, cell_height
+
+
+def fallback_serial_for_card(page_number, row_index, column_index):
+    if page_number < 3:
+        return ""
+    return str((page_number - 3) * 30 + row_index * 3 + column_index + 1)
+
+
+def extract_card_serial(card_text, page_number, row_index, column_index):
+    first_line = normalize_digits(card_text.splitlines()[0] if card_text.splitlines() else "")
+    match = re.search(r"\b(\d{1,5})\b", first_line)
+    if match:
+        serial = int(match.group(1))
+        if 1 <= serial <= 99999:
+            return str(serial)
+    return fallback_serial_for_card(page_number, row_index, column_index)
+
+
+def parse_voter_card_text(card_text, page_number, row_index, column_index):
+    if not has_voter_field(card_text):
+        return None
+
+    record = blank_voter(page_number)
+    record["raw_text"] = clean_text(card_text)
+    record["serial_number"] = extract_card_serial(card_text, page_number, row_index, column_index)
+
+    for line in card_text.splitlines():
+        record["name"] = record["name"] or extract_name(line)
+        record["guardian_name"] = record["guardian_name"] or extract_guardian(line)
+        record["house_number"] = record["house_number"] or extract_house_number(line)
+        record["age"] = record["age"] or extract_age(line)
+        record["gender"] = record["gender"] or extract_gender(line)
+
+    completed = finalize_voter(record)
+    if completed and not completed.get("serial_number"):
+        completed["serial_number"] = extract_card_serial(card_text, page_number, row_index, column_index)
+    return completed
+
+
+def parse_voter_card_grid(image_path, page_number, lang):
+    with Image.open(image_path) as image:
+        width, height = image.size
+        ocr_data = pytesseract.image_to_data(
+            image,
+            lang=lang,
+            config=DEFAULT_TESSERACT_CONFIG,
+            output_type=pytesseract.Output.DATAFRAME,
+        )
+
+    if ocr_data.empty:
+        return []
+
+    ocr_data = ocr_data.copy()
+    ocr_data["text"] = ocr_data["text"].fillna("").astype(str)
+    ocr_data = ocr_data[ocr_data["text"].str.strip() != ""]
+    if ocr_data.empty:
+        return []
+
+    ocr_data["center_x"] = ocr_data["left"] + (ocr_data["width"] / 2)
+    ocr_data["center_y"] = ocr_data["top"] + (ocr_data["height"] / 2)
+    x_starts, cell_width, y_start, row_pitch, cell_height = card_grid_bounds(width, height)
+
+    voters = []
+    for row_index in range(10):
+        top = y_start + row_index * row_pitch
+        bottom = top + cell_height
+        for column_index, left in enumerate(x_starts):
+            right = left + cell_width
+            cell_words = ocr_data[
+                (ocr_data["center_x"] >= left)
+                & (ocr_data["center_x"] < right)
+                & (ocr_data["center_y"] >= top)
+                & (ocr_data["center_y"] < bottom)
+            ].copy()
+            if cell_words.empty:
+                continue
+
+            line_groups = []
+            for _, group in cell_words.groupby(["block_num", "par_num", "line_num"], sort=False):
+                text = line_text_from_ocr_group(group)
+                if text:
+                    line_groups.append((int(group["top"].min()), text))
+
+            card_text = "\n".join(text for _, text in sorted(line_groups))
+            record = parse_voter_card_text(card_text, page_number, row_index, column_index)
+            if record:
+                voters.append(record)
+
+    return voters
+
+
 def parse_repeated_voter_group(lines, start_index, page_number):
     names = extract_repeated_names(lines[start_index])
     if len(names) < 2:
@@ -852,19 +990,19 @@ def parse_repeated_voter_group(lines, start_index, page_number):
     guardians = extract_repeated_guardians(group_lines[0])
     houses = extract_repeated_house_numbers(group_lines[1])
     ages_genders = extract_repeated_age_gender(group_lines[2])
-    expected_count = min(len(names), len(guardians), len(houses), len(ages_genders))
 
-    if expected_count < 2:
+    if max(len(guardians), len(houses), len(ages_genders)) < 2:
         return [], start_index
 
     voters = []
     raw_text = clean_text(" ".join([lines[start_index], *group_lines]))
-    for offset in range(expected_count):
+    for offset, name in enumerate(names):
         record = blank_voter(page_number)
-        record["name"] = names[offset]
-        record["guardian_name"] = guardians[offset]
-        record["house_number"] = houses[offset]
-        record["age"], record["gender"] = ages_genders[offset]
+        record["name"] = name
+        record["guardian_name"] = guardians[offset] if offset < len(guardians) else ""
+        record["house_number"] = houses[offset] if offset < len(houses) else ""
+        if offset < len(ages_genders):
+            record["age"], record["gender"] = ages_genders[offset]
         record["raw_text"] = raw_text
         completed = finalize_voter(record)
         if completed:
@@ -933,6 +1071,10 @@ def ocr_page(image, page_number, lang):
 
 
 def ocr_image_file(image_path, page_number, lang):
+    grid_voters = parse_voter_card_grid(image_path, page_number, lang)
+    if grid_voters:
+        return page_number, grid_voters
+
     text = pytesseract.image_to_string(str(image_path), lang=lang, config=DEFAULT_TESSERACT_CONFIG)
     return page_number, parse_voter_rows(text, page_number)
 
@@ -1068,9 +1210,29 @@ def build_dashboard(df):
     }
 
 
+def assign_sequential_serials(df):
+    if df.empty or "serial_number" not in df:
+        return df
+
+    df = df.copy()
+    sort_columns = [column for column in ("pdf_file", "page") if column in df.columns]
+    ordered_index = df.sort_values(sort_columns, kind="stable").index if sort_columns else df.index
+
+    if "pdf_file" in df.columns:
+        for _, group in df.loc[ordered_index].groupby("pdf_file", sort=False):
+            for serial, index in enumerate(group.index, start=1):
+                df.at[index, "serial_number"] = str(serial)
+    else:
+        for serial, index in enumerate(ordered_index, start=1):
+            df.at[index, "serial_number"] = str(serial)
+
+    return df
+
+
 def write_reports(df, output_dir):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    df = assign_sequential_serials(df)
 
     details_path = output_dir / "voter_extraction.xlsx"
     summary_path = output_dir / "dashboard_summary.xlsx"
@@ -1108,6 +1270,7 @@ def process_pdf(
         lang=lang,
         progress_callback=progress_callback,
     )
+    df = assign_sequential_serials(df)
     details_path, summary_path, summary = write_reports(df, output_dir)
     return {
         "data": df,
@@ -1210,6 +1373,7 @@ def process_pdfs(
             voters.append({"pdf_file": display_name, **voter})
 
     combined_df = pd.DataFrame(voters, columns=["pdf_file", *REPORT_COLUMNS])
+    combined_df = assign_sequential_serials(combined_df)
     details_path, summary_path, summary = write_reports(combined_df, output_dir)
     return {
         "data": combined_df,

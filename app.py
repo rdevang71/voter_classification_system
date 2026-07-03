@@ -130,7 +130,7 @@ def run_pdf_job(job_id, uploaded_files, first_page, last_page, dpi, lang):
             update_job(job_id, percent=95, message="Preparing Excel reports...")
             DOWNLOADS[job_id] = result_to_downloads(result)
             result["job_id"] = job_id
-            rows = result["data"].head(250).to_dict("records")
+            rows = result["data"].to_dict("records")
             update_job(
                 job_id,
                 status="complete",
@@ -197,7 +197,7 @@ def index():
 
                     DOWNLOADS[job_id] = result_to_downloads(result)
                     result["job_id"] = job_id
-                rows = result["data"].head(250).to_dict("records")
+                rows = result["data"].to_dict("records")
             except Exception as exc:
                 error = str(exc)
 
