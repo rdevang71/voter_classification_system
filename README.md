@@ -191,7 +191,6 @@ sudo systemctl restart nginx
 ```
 
 ## 10. Worker Setting
-
 Use:
 
 ```bash
