@@ -30,12 +30,12 @@ REPORT_COLUMNS = [
     "name",
     "guardian_name",
     "house_number",
+    "address",
     "age",
     "gender",
     "religion_label",
     "caste_label",
     "review_status",
-    "raw_text",
 ]
 
 
@@ -786,6 +786,18 @@ def is_valid_voter_record(record):
     return has_age_or_gender and has_guardian_or_house
 
 
+def build_address(house_number="", section_name=""):
+    section_name = clean_text(section_name)
+    return section_name
+
+
+def set_record_address(record, section_name=""):
+    if record is None:
+        return None
+    record["address"] = build_address(record.get("house_number"), section_name) or record.get("address", "")
+    return record
+
+
 def finalize_voter(record):
     if not record or not record.get("name"):
         return None
@@ -798,6 +810,7 @@ def finalize_voter(record):
         record["review_status"] = classify_review_status(record["name"], record["raw_text"])
     else:
         record["review_status"] = "needs_review"
+    set_record_address(record)
     return record
 
 
@@ -808,6 +821,7 @@ def blank_voter(page_number):
         "name": "",
         "guardian_name": "",
         "house_number": "",
+        "address": "",
         "age": "",
         "gender": "",
         "religion_label": "",
@@ -871,6 +885,31 @@ def extract_repeated_age_gender(text):
 
 def line_text_from_ocr_group(group):
     return clean_text(" ".join(str(text) for text in group.sort_values("left")["text"] if str(text) != "nan"))
+
+
+def ocr_line_groups(ocr_data):
+    lines = []
+    for _, group in ocr_data.groupby(["block_num", "par_num", "line_num"], sort=False):
+        text = line_text_from_ocr_group(group)
+        if text:
+            lines.append((int(group["top"].min()), text))
+    return sorted(lines)
+
+
+def extract_section_address(lines):
+    for _, line in lines:
+        if "\u0905\u0928\u0941\u092d\u093e\u0917" not in line or "\u0928\u093e\u092e" not in line:
+            continue
+        match = re.search(
+            r"\u0905\u0928\u0941\u092d\u093e\u0917\s+\u0938\u0902\u0916\u094d\u092f\u093e\s+\u0914\u0930\s+\u0928\u093e\u092e\s*[:;\-\uff1a]?\s*(.+)$",
+            line,
+        )
+        if not match:
+            continue
+        address = clean_field_value(match.group(1))
+        address = re.sub(r"^\d+\s*[-:\uff1a]?\s*", "", normalize_digits(address))
+        return clean_text(address)
+    return ""
 
 
 def card_grid_bounds(width, height):
@@ -940,6 +979,8 @@ def parse_voter_card_grid(image_path, page_number, lang):
 
     ocr_data["center_x"] = ocr_data["left"] + (ocr_data["width"] / 2)
     ocr_data["center_y"] = ocr_data["top"] + (ocr_data["height"] / 2)
+    page_lines = ocr_line_groups(ocr_data)
+    section_address = extract_section_address(page_lines)
     x_starts, cell_width, y_start, row_pitch, cell_height = card_grid_bounds(width, height)
 
     voters = []
@@ -957,15 +998,11 @@ def parse_voter_card_grid(image_path, page_number, lang):
             if cell_words.empty:
                 continue
 
-            line_groups = []
-            for _, group in cell_words.groupby(["block_num", "par_num", "line_num"], sort=False):
-                text = line_text_from_ocr_group(group)
-                if text:
-                    line_groups.append((int(group["top"].min()), text))
-
+            line_groups = ocr_line_groups(cell_words)
             card_text = "\n".join(text for _, text in sorted(line_groups))
             record = parse_voter_card_text(card_text, page_number, row_index, column_index)
             if record:
+                set_record_address(record, section_address)
                 voters.append(record)
 
     return voters
@@ -1229,10 +1266,16 @@ def assign_sequential_serials(df):
     return df
 
 
+def report_export_dataframe(df):
+    export_columns = [column for column in (["pdf_file"] if "pdf_file" in df.columns else []) + REPORT_COLUMNS if column in df.columns]
+    return df.loc[:, export_columns].copy()
+
+
 def write_reports(df, output_dir):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     df = assign_sequential_serials(df)
+    export_df = report_export_dataframe(df)
 
     details_path = output_dir / "voter_extraction.xlsx"
     summary_path = output_dir / "dashboard_summary.xlsx"
@@ -1244,7 +1287,7 @@ def write_reports(df, output_dir):
     )
     dashboard = build_dashboard(df)
 
-    df.to_excel(details_path, index=False)
+    export_df.to_excel(details_path, index=False)
     with pd.ExcelWriter(summary_path) as writer:
         summary.to_excel(writer, sheet_name="review_status", index=False)
         dashboard["religion_counts"].to_excel(writer, sheet_name="religion_labels", index=False)

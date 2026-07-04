@@ -210,7 +210,7 @@
                   <th>Religion</th>
                   <th>Caste</th>
                   <th>Status</th>
-                  <th>Raw OCR</th>
+                  <th>Address</th>
                 </tr>
               </thead>
               <tbody>
@@ -229,7 +229,7 @@
                     <td>{{ row.religion_label }}</td>
                     <td>{{ row.caste_label }}</td>
                     <td><span class="pill {{ row.review_status }}">{{ row.review_status }}</span></td>
-                    <td style="font-size: 0.85em; color: #666;">{{ row.raw_text|truncate(80) }}</td>
+                    <td style="font-size: 0.85em; color: #666;">{{ row.address }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
